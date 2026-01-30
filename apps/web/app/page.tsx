@@ -10,7 +10,7 @@ export default function Home() {
   const router = useRouter()
   const [roomCode, setRoomCode] = useState('')
   const [nickname, setNickname] = useState('')
-  const { createGuestUser, isLoading } = useUserStore()
+  const { user, createGuestUser, logout, isLoading } = useUserStore()
   const { createRoom, joinRoom } = useRoomStore()
 
   const handleCreateRoom = async () => {
@@ -110,6 +110,24 @@ export default function Home() {
           >
             <span className="font-semibold">{nickname}</span>(으)로 플레이
           </motion.p>
+        )}
+
+        {user && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mt-4"
+          >
+            <button
+              onClick={() => {
+                logout()
+                setNickname('')
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              다른 유저로 접속 (현재: {user.displayName})
+            </button>
+          </motion.div>
         )}
       </motion.div>
     </main>
