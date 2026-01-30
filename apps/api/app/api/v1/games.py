@@ -27,7 +27,7 @@ async def create_game(game_data: GameCreate, db: AsyncSession = Depends(get_db))
     db.add(game)
 
     room.status = RoomStatus.IN_GAME
-    await db.flush()
+    await db.commit()
     await db.refresh(game)
     return game
 

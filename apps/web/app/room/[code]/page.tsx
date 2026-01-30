@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useRoomStore } from '@/stores/roomStore'
 import { useUserStore } from '@/stores/userStore'
 import { useSocketStore } from '@/stores/socketStore'
+import { useGameStore } from '@/stores/gameStore'
 import { api } from '@/lib/api'
 import { getSocket } from '@/lib/socket'
 
@@ -14,10 +15,15 @@ export default function RoomPage() {
   const router = useRouter()
   const code = params.code as string
   const [isReady, setIsReady] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
 
   const { user, _hasHydrated } = useUserStore()
   const { room, players, leaveRoom, updatePlayerReady } = useRoomStore()
   const { connect, disconnect, isConnected } = useSocketStore()
+  const { isInGame } = useGameStore()
+
+  // Track if we're navigating to game page to avoid disconnecting socket
+  const isNavigatingToGame = useRef(false)
 
   useEffect(() => {
     console.log('RoomPage useEffect:', { _hasHydrated, user, code, room })
@@ -85,13 +91,30 @@ export default function RoomPage() {
     })
 
     return () => {
-      // Clean up: remove listener and disconnect
+      // Clean up: remove listener
       const socket = getSocket()
       socket.off('connect')
-      leaveRoom()
-      disconnect()
+
+      // Only disconnect if NOT navigating to game page
+      // (we want to keep the socket connection when transitioning to game)
+      if (!isNavigatingToGame.current) {
+        console.log('[RoomPage] Cleanup: leaving room and disconnecting')
+        leaveRoom()
+        disconnect()
+      } else {
+        console.log('[RoomPage] Cleanup: navigating to game, keeping socket connected')
+      }
     }
   }, [_hasHydrated, user, code])
+
+  // Navigate to game page when game starts
+  useEffect(() => {
+    if (isInGame) {
+      console.log('[RoomPage] Game started, navigating to game page')
+      isNavigatingToGame.current = true
+      router.push(`/game/${code}`)
+    }
+  }, [isInGame, code, router])
 
   const handleToggleReady = () => {
     if (!user || !room) return
@@ -124,14 +147,28 @@ export default function RoomPage() {
   const allNonHostReady = nonHostPlayers.length > 0 && readyNonHostPlayers.length === nonHostPlayers.length
   const canStartGame = isHost && players.length >= (room?.minPlayers ?? 2) && allNonHostReady
 
-  const handleStartGame = () => {
-    if (!room || !canStartGame) return
+  const handleStartGame = async () => {
+    if (!room || !canStartGame || isStarting) return
 
-    const socket = getSocket()
-    socket.emit('start_game', {
-      room_id: room.code,
-      game_type: room.gameType,
-    })
+    setIsStarting(true)
+    try {
+      // Create game record in database first
+      const game = await api.createGame({
+        roomId: room.id,
+        gameType: room.gameType,
+      })
+
+      // Then emit socket event with game_id
+      const socket = getSocket()
+      socket.emit('start_game', {
+        room_id: room.code,
+        game_type: room.gameType,
+        game_id: game.id,
+      })
+    } catch (error) {
+      console.error('Failed to start game:', error)
+      setIsStarting(false)
+    }
   }
 
   if (!_hasHydrated || !room) {
@@ -241,19 +278,21 @@ export default function RoomPage() {
               <div className="mt-6 space-y-3">
                 {isHost ? (
                   <motion.button
-                    whileHover={canStartGame ? { scale: 1.02 } : {}}
-                    whileTap={canStartGame ? { scale: 0.98 } : {}}
+                    whileHover={canStartGame && !isStarting ? { scale: 1.02 } : {}}
+                    whileTap={canStartGame && !isStarting ? { scale: 0.98 } : {}}
                     onClick={handleStartGame}
-                    disabled={!canStartGame}
+                    disabled={!canStartGame || isStarting}
                     className={`w-full px-4 py-3 font-semibold rounded-xl transition-colors ${
-                      canStartGame
+                      canStartGame && !isStarting
                         ? 'bg-green-600 hover:bg-green-700 text-white'
                         : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {canStartGame
-                      ? '게임 시작'
-                      : `대기 중 (${readyNonHostPlayers.length}/${nonHostPlayers.length} 준비)`}
+                    {isStarting
+                      ? '게임 시작 중...'
+                      : canStartGame
+                        ? '게임 시작'
+                        : `대기 중 (${readyNonHostPlayers.length}/${nonHostPlayers.length} 준비)`}
                   </motion.button>
                 ) : (
                   <motion.button

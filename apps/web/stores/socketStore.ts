@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket'
 import { useUserStore } from './userStore'
 import { useRoomStore } from './roomStore'
+import { useGameStore } from './gameStore'
 
 interface SocketState {
   isConnected: boolean
@@ -46,7 +47,10 @@ export const useSocketStore = create<SocketState>((set) => ({
         set({ error: error.message, isConnected: false })
       })
 
-      // Setup room listeners
+      // ============================================
+      // Room listeners
+      // ============================================
+
       socket.on('user_joined', (data) => {
         console.log('User joined:', data)
         useRoomStore.getState().addPlayer({
@@ -90,14 +94,107 @@ export const useSocketStore = create<SocketState>((set) => ({
         }
       })
 
+      // ============================================
+      // Avalon game listeners
+      // ============================================
+
       socket.on('game_started', (data) => {
         console.log('Game started:', data)
-        // Navigate to game page or update state
+        if (data.game_type === 'avalon' && data.game_id && data.game_state) {
+          useGameStore.getState().setGameStarted(
+            data.game_id,
+            data.room_id,
+            data.game_state
+          )
+        }
       })
+
+      socket.on('role_assigned', (data) => {
+        console.log('Role assigned:', data)
+        useGameStore.getState().setRoleAssigned(
+          data.role,
+          data.team,
+          (data.known_info || []).map((info: any) => ({
+            userId: info.user_id,
+            displayName: info.display_name,
+            info: info.info,
+          }))
+        )
+      })
+
+      socket.on('game_state_update', (data) => {
+        console.log('[Socket] game_state_update received:', data)
+        if (data.state) {
+          console.log('[Socket] Calling updateGameState with phase:', data.state.phase, 'round:', data.state.current_round)
+          useGameStore.getState().updateGameState(data.state)
+          console.log('[Socket] After updateGameState - phase:', useGameStore.getState().game.phase)
+        }
+      })
+
+      socket.on('team_proposed', (data) => {
+        console.log('[Socket] team_proposed received:', data)
+        console.log('[Socket] Current game state before update:', {
+          phase: useGameStore.getState().game.phase,
+          proposedTeam: useGameStore.getState().game.proposedTeam,
+        })
+        useGameStore.getState().setTeamProposed(
+          data.leader_id,
+          data.proposed_team
+        )
+        console.log('[Socket] Game state after setTeamProposed:', {
+          phase: useGameStore.getState().game.phase,
+          proposedTeam: useGameStore.getState().game.proposedTeam,
+        })
+      })
+
+      socket.on('team_vote_update', (data) => {
+        console.log('Team vote update:', data)
+        useGameStore.getState().setTeamVoteUpdate(data.votes_count)
+      })
+
+      socket.on('team_vote_result', (data) => {
+        console.log('Team vote result:', data)
+        useGameStore.getState().setTeamVoteResult(data)
+      })
+
+      socket.on('mission_vote_update', (data) => {
+        console.log('Mission vote update:', data)
+        useGameStore.getState().setMissionVoteUpdate(data.votes_count)
+      })
+
+      socket.on('mission_result', (data) => {
+        console.log('[Socket] mission_result received:', data)
+        console.log('[Socket] Current game state before setMissionResult:', {
+          phase: useGameStore.getState().game.phase,
+          currentRound: useGameStore.getState().game.currentRound,
+          missionResults: useGameStore.getState().game.missionResults,
+        })
+        useGameStore.getState().setMissionResult(data)
+        console.log('[Socket] Game state after setMissionResult:', {
+          phase: useGameStore.getState().game.phase,
+          currentRound: useGameStore.getState().game.currentRound,
+          missionResults: useGameStore.getState().game.missionResults,
+        })
+      })
+
+      socket.on('assassination_result', (data) => {
+        console.log('Assassination result:', data)
+        useGameStore.getState().setAssassinationResult(data)
+      })
+
+      socket.on('game_ended', (data) => {
+        console.log('Game ended:', data)
+        useGameStore.getState().setGameEnded(data)
+      })
+
+      // ============================================
+      // Error handling
+      // ============================================
 
       socket.on('error', (data) => {
         console.log('Socket error:', data)
         set({ error: data.message })
+        useGameStore.getState().setError(data.message)
       })
     }
 

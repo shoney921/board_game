@@ -65,7 +65,13 @@ export const api = {
 
   // Games
   createGame: (data: CreateGameData) =>
-    request<Game>('/api/v1/games/', { method: 'POST', body: data }),
+    request<Game>('/api/v1/games/', {
+      method: 'POST',
+      body: {
+        room_id: data.roomId,
+        game_type: data.gameType,
+      },
+    }),
 
   getGame: (id: number) =>
     request<Game>(`/api/v1/games/${id}`),

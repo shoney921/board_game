@@ -1,6 +1,32 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage, StateStorage } from 'zustand/middleware'
 import { api, User } from '@/lib/api'
+
+// API response type (snake_case from backend)
+interface ApiUser {
+  id: number
+  username: string
+  display_name: string
+  is_guest: boolean
+  is_active: boolean
+  created_at: string
+}
+
+// Use sessionStorage for testing - each tab gets its own user
+const sessionStorageWrapper: StateStorage = {
+  getItem: (name) => {
+    if (typeof window === 'undefined') return null
+    return sessionStorage.getItem(name)
+  },
+  setItem: (name, value) => {
+    if (typeof window === 'undefined') return
+    sessionStorage.setItem(name, value)
+  },
+  removeItem: (name) => {
+    if (typeof window === 'undefined') return
+    sessionStorage.removeItem(name)
+  },
+}
 
 interface UserState {
   user: User | null
@@ -33,7 +59,7 @@ export const useUserStore = create<UserState>()(
       createGuestUser: async (displayName?: string) => {
         set({ isLoading: true, error: null })
         try {
-          const response = await api.createGuestUser(displayName)
+          const response = await api.createGuestUser(displayName) as unknown as { user: ApiUser; access_token: string }
           set({
             user: {
               id: response.user.id,
@@ -66,6 +92,8 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: 'user-storage',
+      // Use sessionStorage so each browser tab has its own user (for testing)
+      storage: createJSONStorage(() => sessionStorageWrapper),
       partialize: (state) => ({ user: state.user, token: state.token }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true)
