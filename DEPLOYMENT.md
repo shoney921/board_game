@@ -1,15 +1,90 @@
-# Board Game Platform - 프로덕션 배포 가이드
+# Board Game Platform - 배포 가이드
+
+이 문서는 Board Game Platform의 개발 및 프로덕션 환경 배포 방법을 설명합니다.
 
 ## 목차
 
-1. [아키텍처 개요](#아키텍처-개요)
-2. [사전 요구사항](#사전-요구사항)
-3. [환경 설정](#환경-설정)
-4. [배포 절차](#배포-절차)
-5. [운영 명령어](#운영-명령어)
-6. [모니터링](#모니터링)
-7. [트러블슈팅](#트러블슈팅)
-8. [파일 구조](#파일-구조)
+1. [개발 vs 프로덕션 환경 비교](#개발-vs-프로덕션-환경-비교)
+2. [아키텍처 개요](#아키텍처-개요)
+3. [사전 요구사항](#사전-요구사항)
+4. [환경 설정](#환경-설정)
+5. [배포 절차](#배포-절차)
+6. [운영 명령어](#운영-명령어)
+7. [모니터링](#모니터링)
+8. [트러블슈팅](#트러블슈팅)
+9. [파일 구조](#파일-구조)
+
+---
+
+## 개발 vs 프로덕션 환경 비교
+
+### 환경별 특징
+
+| 항목 | 개발 환경 | 프로덕션 환경 |
+|------|----------|--------------|
+| **목적** | 로컬 개발 및 테스트 | 실제 서비스 운영 |
+| **Docker Compose 파일** | `docker-compose.dev.yml` | `docker-compose.prod.yml` |
+| **환경변수 파일** | `.env` | `.env.production` |
+| **접속 방식** | 직접 포트 접속 | Nginx + Cloudflare Tunnel |
+| **HTTPS** | 미지원 (http) | 지원 (Cloudflare) |
+| **Hot Reload** | 지원 (볼륨 마운트) | 미지원 |
+| **빌드 방식** | 개발 모드 | 최적화된 프로덕션 빌드 |
+| **로깅 레벨** | DEBUG | INFO |
+
+### 포트 비교
+
+| 서비스 | 개발 환경 | 프로덕션 환경 |
+|--------|----------|--------------|
+| **Frontend** | localhost:3003 | 내부 (3000) |
+| **Backend API** | localhost:8003 | 내부 (8000) |
+| **PostgreSQL** | localhost:5435 | 내부 전용 |
+| **Redis** | localhost:6382 | 내부 전용 |
+| **Nginx** | - | localhost:8081 |
+| **외부 접속** | 3003, 8003 | 8081 또는 HTTPS 도메인 |
+
+### 실행 명령어 비교
+
+```bash
+# === 개발 환경 ===
+# 실행
+docker-compose -f docker-compose.dev.yml up --build
+
+# 중지
+docker-compose -f docker-compose.dev.yml down
+
+# 로그
+docker-compose -f docker-compose.dev.yml logs -f
+
+
+# === 프로덕션 환경 ===
+# 실행
+docker-compose -f docker-compose.prod.yml --env-file .env.production up --build -d
+
+# 중지
+docker-compose -f docker-compose.prod.yml down
+
+# 로그
+docker-compose -f docker-compose.prod.yml logs -f
+```
+
+### 데이터 흐름 비교
+
+**개발 환경:**
+```
+브라우저 (localhost:3003)  →  Web 서버 (3003)
+브라우저                   →  API 서버 (localhost:8003)
+```
+
+**프로덕션 환경:**
+```
+브라우저 (HTTPS)
+    ↓
+Cloudflare Tunnel (SSL 종단)
+    ↓
+Nginx (localhost:8081)
+    ├─ /api/*, /socket.io/*  →  API 서버 (8000)
+    └─ /*                    →  Web 서버 (3000)
+```
 
 ---
 
