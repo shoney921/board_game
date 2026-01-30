@@ -71,6 +71,14 @@ export const useSocketStore = create<SocketState>((set) => ({
         useRoomStore.getState().updatePlayerReady(data.user_id, data.is_ready)
       })
 
+      socket.on('host_changed', (data: { new_host_id: number }) => {
+        console.log('Host changed:', data)
+        const { setRoom, room } = useRoomStore.getState()
+        if (room) {
+          setRoom({ ...room, hostId: data.new_host_id })
+        }
+      })
+
       socket.on('room_users', (data) => {
         console.log('Room users received:', data)
         // data.players is array of { user_id, username, display_name }

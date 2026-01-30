@@ -1,6 +1,7 @@
 import redis.asyncio as redis
 from typing import Optional
 import json
+import time
 
 from app.config import settings
 
@@ -46,10 +47,23 @@ class RedisClient:
 
     # Room management
     async def add_user_to_room(self, room_id: str, user_id: str, socket_id: str):
+        # Hash for socket_id mapping
         await self.client.hset(f"room:{room_id}:users", user_id, socket_id)
+        # ZSET for join order (timestamp as score)
+        await self.client.zadd(f"room:{room_id}:order", {user_id: time.time()})
 
     async def remove_user_from_room(self, room_id: str, user_id: str):
         await self.client.hdel(f"room:{room_id}:users", user_id)
+        await self.client.zrem(f"room:{room_id}:order", user_id)
+
+    async def get_next_host(self, room_id: str, exclude_user_id: str) -> Optional[str]:
+        """Return the user_id of the earliest joined user, excluding the specified user."""
+        # Get all members sorted by join time (ascending)
+        members = await self.client.zrange(f"room:{room_id}:order", 0, -1)
+        for member in members:
+            if member != exclude_user_id:
+                return member
+        return None
 
     async def get_room_users(self, room_id: str) -> dict:
         return await self.client.hgetall(f"room:{room_id}:users")
@@ -71,6 +85,10 @@ class RedisClient:
         keys = await self.client.keys(f"room:{room_id}:*")
         if keys:
             await self.client.delete(*keys)
+
+    async def clear_room_order(self, room_id: str):
+        """Clear the room order ZSET when room is deleted."""
+        await self.client.delete(f"room:{room_id}:order")
 
 
 redis_client = RedisClient()

@@ -62,6 +62,37 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _handle_host_transfer(room_id: str, leaving_user_id: int):
+    """Transfer host to the next earliest joined user when host leaves."""
+    from app.db.database import async_session
+    from app.models.room import Room
+    from sqlalchemy import select
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(Room).where(Room.code == room_id)
+        )
+        room = result.scalar_one_or_none()
+
+        if room and room.host_id == leaving_user_id:
+            # Find next host
+            next_host_id = await redis_client.get_next_host(room_id, str(leaving_user_id))
+
+            if next_host_id:
+                room.host_id = int(next_host_id)
+                await session.commit()
+
+                # Notify all clients in the room about host change
+                await sio.emit(
+                    "host_changed",
+                    {"new_host_id": int(next_host_id)},
+                    room=room_id,
+                )
+                print(f"[host_transfer] Host transferred to user {next_host_id} in room {room_id}")
+            else:
+                print(f"[host_transfer] No eligible user to transfer host in room {room_id}")
+
+
 @sio.event
 async def connect(sid, environ, auth):
     print(f"Client connected: {sid}")
@@ -76,10 +107,16 @@ async def disconnect(sid):
     user_data = await manager.disconnect(sid)
     if user_data and "room_id" in user_data:
         room_id = user_data["room_id"]
-        await redis_client.remove_user_from_room(room_id, str(user_data.get("user_id", sid)))
+        user_id = user_data.get("user_id")
+
+        # Handle host transfer before removing user
+        if user_id:
+            await _handle_host_transfer(room_id, user_id)
+
+        await redis_client.remove_user_from_room(room_id, str(user_id or sid))
         await sio.emit(
             "user_left",
-            {"user_id": user_data.get("user_id"), "username": user_data.get("username")},
+            {"user_id": user_id, "username": user_data.get("username")},
             room=room_id,
         )
 
@@ -137,6 +174,10 @@ async def leave_room(sid, data):
 
     if not room_id:
         return
+
+    # Handle host transfer before removing user
+    if user_id:
+        await _handle_host_transfer(room_id, user_id)
 
     await sio.leave_room(sid, room_id)
     await redis_client.remove_user_from_room(room_id, str(user_id))
