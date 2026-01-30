@@ -10,7 +10,7 @@ export default function Home() {
   const router = useRouter()
   const [roomCode, setRoomCode] = useState('')
   const [nickname, setNickname] = useState('')
-  const { user, createGuestUser, updateDisplayName, isLoading } = useUserStore()
+  const { createGuestUser, isLoading } = useUserStore()
   const { createRoom, joinRoom } = useRoomStore()
 
   const handleCreateRoom = async () => {
@@ -18,11 +18,8 @@ export default function Home() {
       alert('닉네임을 입력해주세요')
       return
     }
-    if (!user) {
-      await createGuestUser(nickname.trim())
-    } else {
-      updateDisplayName(nickname.trim())
-    }
+    // Always create new guest user with the nickname
+    await createGuestUser(nickname.trim())
     await createRoom('avalon')
   }
 
@@ -32,11 +29,8 @@ export default function Home() {
       return
     }
     if (!roomCode.trim()) return
-    if (!user) {
-      await createGuestUser(nickname.trim())
-    } else {
-      updateDisplayName(nickname.trim())
-    }
+    // Always create new guest user with the nickname
+    await createGuestUser(nickname.trim())
     await joinRoom(roomCode.toUpperCase())
     router.push(`/room/${roomCode.toUpperCase()}`)
   }
