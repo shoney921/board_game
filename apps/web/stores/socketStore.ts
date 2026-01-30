@@ -35,6 +35,31 @@ export const useSocketStore = create<SocketState>((set) => ({
       socket.on('connect', () => {
         console.log('Socket connected')
         set({ isConnected: true, error: null })
+
+        // Auto-rejoin room and request game state on reconnection
+        const { room } = useRoomStore.getState()
+        const { game, rejoinGame } = useGameStore.getState()
+        const { user } = useUserStore.getState()
+
+        if (room && user) {
+          // Rejoin the socket room
+          socket.emit('join_room', {
+            room_id: room.code,
+            user_id: user.id,
+            username: user.username,
+            display_name: user.displayName,
+          })
+
+          // If we have a gameId, request game state
+          if (game.gameId) {
+            console.log('[Socket reconnect] Requesting game state for gameId:', game.gameId)
+            useGameStore.getState().requestGameState()
+          } else if (room.code) {
+            // Try to rejoin game by room code (might have lost gameId on refresh)
+            console.log('[Socket reconnect] Trying to rejoin game for room:', room.code)
+            rejoinGame(room.code)
+          }
+        }
       })
 
       socket.on('disconnect', () => {
@@ -114,6 +139,23 @@ export const useSocketStore = create<SocketState>((set) => ({
             data.room_id,
             data.game_state
           )
+        }
+      })
+
+      socket.on('rejoin_result', (data: { success: boolean; game_id?: number; room_id?: string; message?: string }) => {
+        console.log('Rejoin result:', data)
+        if (data.success && data.game_id && data.room_id) {
+          // Successfully rejoined - game state will be sent via game_state_update
+          const { game } = useGameStore.getState()
+          if (!game.gameId) {
+            // Update gameId if we didn't have it
+            useGameStore.setState((state) => ({
+              game: { ...state.game, gameId: data.game_id!, roomId: data.room_id! },
+              isInGame: true,
+            }))
+          }
+        } else {
+          console.log('Failed to rejoin game:', data.message)
         }
       })
 

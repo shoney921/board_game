@@ -766,13 +766,31 @@ class AvalonGame:
         return game
 
 
-# In-memory game storage (for development; in production, use Redis/DB)
+# In-memory cache for active games (backed by Redis for persistence)
 _active_games: dict[int, AvalonGame] = {}
 
 
 def get_game(game_id: int) -> Optional[AvalonGame]:
-    """Get an active game by ID"""
+    """Get an active game by ID from memory cache"""
     return _active_games.get(game_id)
+
+
+async def get_game_async(game_id: int) -> Optional[AvalonGame]:
+    """Get an active game by ID, checking Redis if not in memory"""
+    from app.db.redis import redis_client
+
+    # Check memory cache first
+    if game_id in _active_games:
+        return _active_games[game_id]
+
+    # Try to restore from Redis
+    state = await redis_client.get_game_state(game_id)
+    if state:
+        game = AvalonGame.from_state(state)
+        _active_games[game_id] = game
+        return game
+
+    return None
 
 
 def create_game(game_id: int, room_id: int, players: list[dict]) -> AvalonGame:
@@ -783,7 +801,41 @@ def create_game(game_id: int, room_id: int, players: list[dict]) -> AvalonGame:
     return game
 
 
+async def save_game(game: AvalonGame):
+    """Save game state to Redis for persistence"""
+    from app.db.redis import redis_client
+
+    state = game.get_full_state()
+    await redis_client.save_game_state(game.state.game_id, state)
+    # Also map room to game ID for reconnection
+    await redis_client.set_room_game_id(str(game.state.room_id), game.state.game_id)
+
+
 def remove_game(game_id: int):
-    """Remove a game from memory"""
+    """Remove a game from memory cache"""
     if game_id in _active_games:
         del _active_games[game_id]
+
+
+async def remove_game_async(game_id: int, room_id: str = None):
+    """Remove a game from memory and Redis"""
+    from app.db.redis import redis_client
+
+    if game_id in _active_games:
+        if room_id is None:
+            room_id = str(_active_games[game_id].state.room_id)
+        del _active_games[game_id]
+
+    await redis_client.delete_game_state(game_id)
+    if room_id:
+        await redis_client.delete_room_game_id(room_id)
+
+
+async def get_game_by_room(room_id: str) -> Optional[AvalonGame]:
+    """Get active game for a room (for reconnection)"""
+    from app.db.redis import redis_client
+
+    game_id = await redis_client.get_room_game_id(room_id)
+    if game_id:
+        return await get_game_async(game_id)
+    return None

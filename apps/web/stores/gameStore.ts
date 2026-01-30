@@ -2,6 +2,46 @@ import { create } from 'zustand'
 import { getSocket } from '@/lib/socket'
 
 // ============================================
+// LocalStorage helpers for reconnection support
+// ============================================
+
+const GAME_SESSION_KEY = 'avalon_game_session'
+
+interface GameSession {
+  gameId: number
+  roomId: string
+  myRole: string | null
+  myTeam: string | null
+  knownInfo: any[]
+}
+
+function saveGameSession(session: GameSession): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(GAME_SESSION_KEY, JSON.stringify(session))
+  }
+}
+
+function loadGameSession(): GameSession | null {
+  if (typeof window !== 'undefined') {
+    const data = localStorage.getItem(GAME_SESSION_KEY)
+    if (data) {
+      try {
+        return JSON.parse(data)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+function clearGameSession(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(GAME_SESSION_KEY)
+  }
+}
+
+// ============================================
 // Types
 // ============================================
 
@@ -132,6 +172,10 @@ interface GameStore {
   assassinate: (targetId: number) => void
   requestGameState: () => void
 
+  // Reconnection
+  tryRestoreFromLocalStorage: (roomId: string) => boolean
+  rejoinGame: (roomId: string) => void
+
   // Utility
   resetGame: () => void
   setError: (error: string | null) => void
@@ -197,6 +241,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         proposedTeam: gameState.proposed_team || [],
       },
     })
+
+    // Save to localStorage for reconnection
+    saveGameSession({
+      gameId,
+      roomId,
+      myRole: null,
+      myTeam: null,
+      knownInfo: [],
+    })
   },
 
   setRoleAssigned: (role, team, knownInfo) => {
@@ -208,12 +261,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
         knownInfo,
       },
     }))
+
+    // Update localStorage with role info
+    const { game } = get()
+    if (game.gameId && game.roomId) {
+      saveGameSession({
+        gameId: game.gameId,
+        roomId: game.roomId,
+        myRole: role,
+        myTeam: team,
+        knownInfo,
+      })
+    }
   },
 
   updateGameState: (serverState) => {
     set((state) => ({
       game: {
         ...state.game,
+        // Update gameId/roomId if provided (for reconnection)
+        gameId: serverState.game_id ?? state.game.gameId,
+        roomId: serverState.room_id ?? state.game.roomId,
         phase: serverState.phase || state.game.phase,
         currentRound: serverState.current_round ?? state.game.currentRound,
         currentLeaderId: serverState.current_leader_id ?? state.game.currentLeaderId,
@@ -229,6 +297,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
         availableActions: serverState.available_actions || state.game.availableActions,
         myTeamVote: serverState.my_team_vote ?? state.game.myTeamVote,
         myMissionVote: serverState.my_mission_vote ?? state.game.myMissionVote,
+        // Update role/team info if provided (for reconnection)
+        myRole: serverState.my_role ?? state.game.myRole,
+        myTeam: serverState.my_team ?? state.game.myTeam,
+        knownInfo: serverState.known_info
+          ? serverState.known_info.map((info: any) => ({
+              userId: info.user_id,
+              displayName: info.display_name,
+              info: info.info,
+            }))
+          : state.game.knownInfo,
+        // Update players if provided (for reconnection)
+        players: serverState.players
+          ? serverState.players.map((p: any) => ({
+              userId: p.user_id,
+              username: p.username,
+              displayName: p.display_name,
+            }))
+          : state.game.players,
         missionHistory: (serverState.mission_history || state.game.missionHistory).map((m: any) => ({
           round: m.round,
           teamSize: m.team_size,
@@ -239,6 +325,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           result: m.result,
         })),
       },
+      // Mark as in game if we received state
+      isInGame: true,
     }))
   },
 
@@ -363,6 +451,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       },
       isInGame: false,
     }))
+
+    // Clear localStorage when game ends
+    clearGameSession()
   },
 
   proposeTeam: (teamMembers) => {
@@ -454,6 +545,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
       error: null,
       isInGame: false,
     })
+
+    // Clear localStorage
+    clearGameSession()
+  },
+
+  tryRestoreFromLocalStorage: (roomId: string) => {
+    const session = loadGameSession()
+    if (session && session.roomId === roomId) {
+      // Restore basic game info from localStorage
+      set((state) => ({
+        game: {
+          ...state.game,
+          gameId: session.gameId,
+          roomId: session.roomId,
+          myRole: session.myRole as AvalonRole | null,
+          myTeam: session.myTeam as AvalonTeam | null,
+          knownInfo: session.knownInfo || [],
+        },
+        isInGame: true,
+      }))
+      return true
+    }
+    return false
+  },
+
+  rejoinGame: (roomId: string) => {
+    const socket = getSocket()
+    console.log('[rejoinGame] Attempting to rejoin game for room:', roomId)
+    socket.emit('rejoin_game', { room_id: roomId })
   },
 
   setError: (error) => {

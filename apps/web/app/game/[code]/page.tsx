@@ -55,6 +55,8 @@ export default function GamePage() {
     assassinate,
     resetGame,
     requestGameState,
+    tryRestoreFromLocalStorage,
+    rejoinGame,
     clearLastTeamVoteResult,
     clearLastMissionResult,
   } = useGameStore()
@@ -101,9 +103,15 @@ export default function GamePage() {
       return
     }
 
-    // If not in game, redirect to room
+    // Try to restore game state from localStorage on initial load
+    let restoredFromStorage = false
     if (!isInGame && !game.gameId) {
-      // Try to fetch room and see if there's an active game
+      restoredFromStorage = tryRestoreFromLocalStorage(code)
+      console.log('[GamePage] Restored from localStorage:', restoredFromStorage)
+    }
+
+    // If not in game and no localStorage data, fetch room info
+    if (!isInGame && !game.gameId && !restoredFromStorage) {
       api.getRoomByCode(code).then((fetchedRoom) => {
         useRoomStore.getState().setRoom({
           ...fetchedRoom,
@@ -122,19 +130,30 @@ export default function GamePage() {
     // Connect socket if needed and join room
     const socket = getSocket()
 
-    const joinRoomIfNeeded = () => {
+    const joinRoomAndRejoin = () => {
       if (user && !hasJoinedRoom.current) {
         hasJoinedRoom.current = true
         console.log('[GamePage] Joining room:', code, 'user:', user.id, user.displayName)
-        console.log('[GamePage] Socket connected:', socket.connected, 'Socket id:', socket.id)
         socket.emit('join_room', {
           room_id: code,
           user_id: user.id,
           username: user.username,
           display_name: user.displayName,
         })
-      } else if (hasJoinedRoom.current) {
-        console.log('[GamePage] Already joined room, skipping')
+
+        // After joining room, try to rejoin game
+        // Use setTimeout to ensure join_room is processed first
+        setTimeout(() => {
+          const currentGame = useGameStore.getState().game
+          if (currentGame.gameId) {
+            console.log('[GamePage] Requesting game state for gameId:', currentGame.gameId)
+            requestGameState()
+          } else {
+            // No gameId in memory, try to rejoin by room code
+            console.log('[GamePage] Attempting to rejoin game by room code:', code)
+            rejoinGame(code)
+          }
+        }, 100)
       }
     }
 
@@ -142,22 +161,17 @@ export default function GamePage() {
 
     if (!isConnected) {
       console.log('[GamePage] Not connected, setting up connect listener')
-      socket.once('connect', joinRoomIfNeeded)
+      socket.once('connect', joinRoomAndRejoin)
       connect()
     } else if (socket.connected) {
       // Already connected, join room immediately
       console.log('[GamePage] Already connected, joining room immediately')
-      joinRoomIfNeeded()
+      joinRoomAndRejoin()
     } else {
       console.log('[GamePage] isConnected true but socket.connected false - waiting for connection')
-      socket.once('connect', joinRoomIfNeeded)
+      socket.once('connect', joinRoomAndRejoin)
     }
-
-    // Request game state for reconnection
-    if (socket.connected && game.gameId) {
-      requestGameState()
-    }
-  }, [_hasHydrated, user, isInGame, game.gameId, code, isConnected])
+  }, [_hasHydrated, user, code, isConnected])
 
   const handlePlayAgain = useCallback(() => {
     resetGame()
@@ -206,7 +220,8 @@ export default function GamePage() {
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4" />
-          <p className="text-gray-600">게임 로딩 중...</p>
+          <p className="text-gray-600">게임에 재접속 중...</p>
+          <p className="text-gray-400 text-sm mt-2">잠시만 기다려주세요</p>
         </div>
       </div>
     )

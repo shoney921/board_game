@@ -90,5 +90,40 @@ class RedisClient:
         """Clear the room order ZSET when room is deleted."""
         await self.client.delete(f"room:{room_id}:order")
 
+    # Game state management (for reconnection support)
+    async def save_game_state(self, game_id: int, state: dict, expire: int = 7200):
+        """Save game state to Redis (2 hour expiry by default)."""
+        await self.client.setex(
+            f"game:{game_id}:state",
+            expire,
+            json.dumps(state),
+        )
+
+    async def get_game_state(self, game_id: int) -> Optional[dict]:
+        """Get game state from Redis."""
+        data = await self.client.get(f"game:{game_id}:state")
+        if data:
+            return json.loads(data)
+        return None
+
+    async def delete_game_state(self, game_id: int):
+        """Delete game state from Redis."""
+        await self.client.delete(f"game:{game_id}:state")
+
+    async def set_room_game_id(self, room_id: str, game_id: int, expire: int = 7200):
+        """Map room to active game ID for reconnection."""
+        await self.client.setex(f"room:{room_id}:game_id", expire, str(game_id))
+
+    async def get_room_game_id(self, room_id: str) -> Optional[int]:
+        """Get active game ID for a room."""
+        data = await self.client.get(f"room:{room_id}:game_id")
+        if data:
+            return int(data)
+        return None
+
+    async def delete_room_game_id(self, room_id: str):
+        """Delete room to game ID mapping."""
+        await self.client.delete(f"room:{room_id}:game_id")
+
 
 redis_client = RedisClient()

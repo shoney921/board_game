@@ -7,8 +7,12 @@ from app.services.avalon import (
     AvalonGame,
     AvalonPhase,
     get_game,
+    get_game_async,
     create_game,
+    save_game,
     remove_game,
+    remove_game_async,
+    get_game_by_room,
 )
 
 # Create Socket.IO server with Redis adapter for scaling
@@ -292,6 +296,9 @@ async def start_game(sid, data):
         game = create_game(game_id, room_id, players)
         game_state = game.state.to_dict()
 
+        # Save game state to Redis for reconnection support
+        await save_game(game)
+
         # Broadcast game started to all players
         await sio.emit(
             "game_started",
@@ -383,6 +390,9 @@ async def propose_team(sid, data):
         result = game.propose_team(user_id, team_members)
         print(f"[propose_team] propose_team result: {result}")
 
+        # Save game state to Redis
+        await save_game(game)
+
         # Broadcast team proposal to all players
         broadcast_data = {
             "game_id": game_id,
@@ -442,6 +452,9 @@ async def vote_team(sid, data):
         )
 
         if result.get("voting_complete"):
+            # Save game state to Redis
+            await save_game(game)
+
             # Broadcast the final vote result with all votes revealed
             await sio.emit(
                 "team_vote_result",
@@ -506,6 +519,9 @@ async def vote_mission(sid, data):
                 room=room_id,
             )
         else:
+            # Save game state to Redis
+            await save_game(game)
+
             # Broadcast mission result
             mission_result_data = {
                 "game_id": game_id,
@@ -596,7 +612,8 @@ async def get_game_state(sid, data):
         await sio.emit("error", {"message": "Invalid request"}, to=sid)
         return
 
-    game = get_game(game_id)
+    # Try to get game from memory or Redis
+    game = await get_game_async(game_id)
     if not game:
         await sio.emit("error", {"message": "Game not found"}, to=sid)
         return
@@ -605,6 +622,17 @@ async def get_game_state(sid, data):
 
     try:
         player_view = game.get_player_view(user_id)
+        # Also send role info for reconnection
+        await sio.emit(
+            "role_assigned",
+            {
+                "game_id": game_id,
+                "role": player_view.get("my_role"),
+                "team": player_view.get("my_team"),
+                "known_info": player_view.get("known_info", []),
+            },
+            to=sid,
+        )
         await sio.emit(
             "game_state_update",
             {
@@ -615,6 +643,76 @@ async def get_game_state(sid, data):
         )
     except Exception as e:
         await sio.emit("error", {"message": str(e)}, to=sid)
+
+
+@sio.event
+async def rejoin_game(sid, data):
+    """
+    Rejoin an active game by room code (used for reconnection after page refresh).
+    Expected data: { room_id }
+    """
+    room_id = data.get("room_id")
+    user_data = manager.get_user_data(sid)
+
+    if not room_id or not user_data:
+        await sio.emit("rejoin_result", {"success": False, "message": "Invalid request"}, to=sid)
+        return
+
+    user_id = user_data.get("user_id")
+
+    # Try to find active game for this room
+    game = await get_game_by_room(room_id)
+    if not game:
+        await sio.emit("rejoin_result", {"success": False, "message": "No active game found"}, to=sid)
+        return
+
+    # Check if user is a player in this game
+    player = next((p for p in game.state.players if p.user_id == user_id), None)
+    if not player:
+        await sio.emit("rejoin_result", {"success": False, "message": "You are not a player in this game"}, to=sid)
+        return
+
+    try:
+        player_view = game.get_player_view(user_id)
+
+        # Send rejoin success with game info
+        await sio.emit(
+            "rejoin_result",
+            {
+                "success": True,
+                "game_id": game.state.game_id,
+                "room_id": room_id,
+            },
+            to=sid,
+        )
+
+        # Send role assignment
+        await sio.emit(
+            "role_assigned",
+            {
+                "game_id": game.state.game_id,
+                "role": player_view.get("my_role"),
+                "team": player_view.get("my_team"),
+                "known_info": player_view.get("known_info", []),
+            },
+            to=sid,
+        )
+
+        # Send full game state
+        await sio.emit(
+            "game_state_update",
+            {
+                "game_id": game.state.game_id,
+                "state": player_view,
+            },
+            to=sid,
+        )
+
+        print(f"[rejoin_game] User {user_id} rejoined game {game.state.game_id} in room {room_id}")
+
+    except Exception as e:
+        print(f"[rejoin_game] Error: {e}")
+        await sio.emit("rejoin_result", {"success": False, "message": str(e)}, to=sid)
 
 
 async def _broadcast_player_views(game: AvalonGame, room_id: str):
@@ -659,8 +757,8 @@ async def _broadcast_game_ended(game: AvalonGame, room_id: str, reason: str):
             room=room_id,
         )
 
-        # Clean up the game from memory
-        remove_game(game.state.game_id)
+        # Clean up the game from memory and Redis
+        await remove_game_async(game.state.game_id, room_id)
 
     except Exception as e:
         print(f"Error broadcasting game end: {e}")
