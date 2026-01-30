@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useRoomStore } from '@/stores/roomStore'
@@ -13,9 +13,10 @@ export default function RoomPage() {
   const params = useParams()
   const router = useRouter()
   const code = params.code as string
+  const [isReady, setIsReady] = useState(false)
 
   const { user, _hasHydrated } = useUserStore()
-  const { room, players, leaveRoom } = useRoomStore()
+  const { room, players, leaveRoom, updatePlayerReady } = useRoomStore()
   const { connect, disconnect, isConnected } = useSocketStore()
 
   useEffect(() => {
@@ -91,6 +92,28 @@ export default function RoomPage() {
       disconnect()
     }
   }, [_hasHydrated, user, code])
+
+  const handleToggleReady = () => {
+    if (!user || !room) return
+
+    const newReadyState = !isReady
+    setIsReady(newReadyState)
+
+    // Update local state immediately
+    updatePlayerReady(user.id, newReadyState)
+
+    // Send socket event
+    const socket = getSocket()
+    socket.emit('ready_toggle', {
+      room_id: room.code,
+      user_id: user.id,
+      is_ready: newReadyState,
+    })
+  }
+
+  // Get current player's ready state from players list
+  const currentPlayer = players.find(p => p.id === user?.id)
+  const currentIsReady = currentPlayer?.isReady ?? isReady
 
   if (!_hasHydrated || !room) {
     return (
@@ -192,9 +215,14 @@ export default function RoomPage() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-colors"
+                  onClick={handleToggleReady}
+                  className={`w-full px-4 py-3 font-semibold rounded-xl transition-colors ${
+                    currentIsReady
+                      ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                      : 'bg-primary-600 hover:bg-primary-700 text-white'
+                  }`}
                 >
-                  준비 완료
+                  {currentIsReady ? '준비 취소' : '준비 완료'}
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
