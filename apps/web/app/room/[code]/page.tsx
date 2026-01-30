@@ -118,10 +118,11 @@ export default function RoomPage() {
   // Check if current user is host
   const isHost = user?.id === room?.hostId
 
-  // Check if game can start (minimum players ready, excluding host)
-  const readyPlayers = players.filter(p => p.isReady || p.isHost)
-  const canStartGame = isHost && players.length >= (room?.minPlayers ?? 5) &&
-    readyPlayers.length === players.length
+  // Check if game can start (all non-host players must be ready)
+  const nonHostPlayers = players.filter(p => !p.isHost)
+  const readyNonHostPlayers = nonHostPlayers.filter(p => p.isReady)
+  const allNonHostReady = nonHostPlayers.length > 0 && readyNonHostPlayers.length === nonHostPlayers.length
+  const canStartGame = isHost && players.length >= (room?.minPlayers ?? 2) && allNonHostReady
 
   const handleStartGame = () => {
     if (!room || !canStartGame) return
@@ -230,9 +231,9 @@ export default function RoomPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-500">준비 현황</span>
                   <span className={`font-semibold ${
-                    readyPlayers.length === players.length ? 'text-green-600' : 'text-yellow-600'
+                    allNonHostReady ? 'text-green-600' : 'text-yellow-600'
                   }`}>
-                    {readyPlayers.length}/{players.length}명 준비
+                    {readyNonHostPlayers.length}/{nonHostPlayers.length}명 준비
                   </span>
                 </div>
               </div>
@@ -252,7 +253,7 @@ export default function RoomPage() {
                   >
                     {canStartGame
                       ? '게임 시작'
-                      : `대기 중 (${readyPlayers.length}/${players.length} 준비)`}
+                      : `대기 중 (${readyNonHostPlayers.length}/${nonHostPlayers.length} 준비)`}
                   </motion.button>
                 ) : (
                   <motion.button

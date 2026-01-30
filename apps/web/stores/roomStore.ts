@@ -61,7 +61,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           name: `${user.displayName}'s Room`,
           gameType,
           maxPlayers: 10,
-          minPlayers: 5,
+          minPlayers: 2, // TODO: 테스트용 임시 설정 (원래 5)
         },
         user.id
       )
