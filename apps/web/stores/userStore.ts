@@ -12,7 +12,8 @@ interface UserState {
   setUser: (user: User | null) => void
   setToken: (token: string | null) => void
   setHasHydrated: (state: boolean) => void
-  createGuestUser: () => Promise<void>
+  createGuestUser: (displayName?: string) => Promise<void>
+  updateDisplayName: (displayName: string) => void
   logout: () => void
 }
 
@@ -29,15 +30,15 @@ export const useUserStore = create<UserState>()(
       setToken: (token) => set({ token }),
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
-      createGuestUser: async () => {
+      createGuestUser: async (displayName?: string) => {
         set({ isLoading: true, error: null })
         try {
-          const response = await api.createGuestUser()
+          const response = await api.createGuestUser(displayName)
           set({
             user: {
               id: response.user.id,
               username: response.user.username,
-              displayName: response.user.display_name,
+              displayName: displayName || response.user.display_name,
               isGuest: response.user.is_guest,
               isActive: response.user.is_active,
               createdAt: response.user.created_at,
@@ -47,10 +48,16 @@ export const useUserStore = create<UserState>()(
           })
         } catch (error) {
           set({
-            error: error instanceof Error ? error.message : 'Failed to create guest user',
+            error: error instanceof Error ? error.message : '게스트 유저 생성 실패',
             isLoading: false,
           })
         }
+      },
+
+      updateDisplayName: (displayName: string) => {
+        set((state) => ({
+          user: state.user ? { ...state.user, displayName } : null,
+        }))
       },
 
       logout: () => {

@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.db.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import UserCreate, UserResponse, UserUpdate, GuestUserCreate
 from app.core.security import get_password_hash, generate_guest_username, create_access_token
 
 router = APIRouter()
@@ -34,11 +34,15 @@ async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/guest", response_model=dict)
-async def create_guest_user(db: AsyncSession = Depends(get_db)):
+async def create_guest_user(
+    guest_data: GuestUserCreate = None,
+    db: AsyncSession = Depends(get_db)
+):
     username = generate_guest_username()
+    display_name = guest_data.display_name if guest_data and guest_data.display_name else username
     user = User(
         username=username,
-        display_name=username,
+        display_name=display_name,
         is_guest=True,
     )
     db.add(user)

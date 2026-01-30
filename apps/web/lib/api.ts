@@ -33,8 +33,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
 export const api = {
   // Users
-  createGuestUser: () =>
-    request<{ user: User; access_token: string }>('/api/v1/users/guest', { method: 'POST' }),
+  createGuestUser: (displayName?: string) =>
+    request<{ user: User; access_token: string }>('/api/v1/users/guest', {
+      method: 'POST',
+      body: displayName ? { display_name: displayName } : undefined,
+    }),
 
   getUser: (id: number) =>
     request<User>(`/api/v1/users/${id}`),

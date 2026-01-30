@@ -19,6 +19,10 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 
+class GuestUserCreate(BaseModel):
+    display_name: Optional[str] = None
+
+
 class UserResponse(UserBase):
     id: int
     email: Optional[str] = None

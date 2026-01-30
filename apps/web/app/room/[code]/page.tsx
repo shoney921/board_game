@@ -97,7 +97,7 @@ export default function RoomPage() {
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading room...</p>
+          <p className="text-gray-600">방 불러오는 중...</p>
         </div>
       </div>
     )
@@ -114,13 +114,13 @@ export default function RoomPage() {
           <div>
             <h1 className="text-3xl font-bold">{room.name}</h1>
             <p className="text-gray-500">
-              Room Code: <span className="font-mono font-bold text-primary-600">{room.code}</span>
+              방 코드: <span className="font-mono font-bold text-primary-600">{room.code}</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
             <span className="text-sm text-gray-500">
-              {isConnected ? 'Connected' : 'Disconnected'}
+              {isConnected ? '연결됨' : '연결 끊김'}
             </span>
           </div>
         </motion.div>
@@ -133,7 +133,7 @@ export default function RoomPage() {
               className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6"
             >
               <h2 className="text-xl font-semibold mb-4">
-                Players ({players.length}/{room.maxPlayers})
+                참가자 ({players.length}/{room.maxPlayers})
               </h2>
               <div className="grid grid-cols-2 gap-3">
                 {players.map((player, index) => (
@@ -155,7 +155,7 @@ export default function RoomPage() {
                       <div>
                         <p className="font-semibold">{player.displayName}</p>
                         <p className="text-xs text-gray-500">
-                          {player.isHost ? 'Host' : player.isReady ? 'Ready' : 'Not Ready'}
+                          {player.isHost ? '방장' : player.isReady ? '준비 완료' : '대기 중'}
                         </p>
                       </div>
                     </div>
@@ -172,19 +172,19 @@ export default function RoomPage() {
               transition={{ delay: 0.2 }}
               className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6"
             >
-              <h2 className="text-xl font-semibold mb-4">Game Settings</h2>
+              <h2 className="text-xl font-semibold mb-4">게임 설정</h2>
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Game Type</span>
+                  <span className="text-gray-500">게임 종류</span>
                   <span className="font-semibold">{room.gameType}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Min Players</span>
-                  <span className="font-semibold">{room.minPlayers}</span>
+                  <span className="text-gray-500">최소 인원</span>
+                  <span className="font-semibold">{room.minPlayers}명</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Max Players</span>
-                  <span className="font-semibold">{room.maxPlayers}</span>
+                  <span className="text-gray-500">최대 인원</span>
+                  <span className="font-semibold">{room.maxPlayers}명</span>
                 </div>
               </div>
 
@@ -194,7 +194,7 @@ export default function RoomPage() {
                   whileTap={{ scale: 0.98 }}
                   className="w-full px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-colors"
                 >
-                  Ready
+                  준비 완료
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
@@ -202,7 +202,7 @@ export default function RoomPage() {
                   onClick={() => router.push('/')}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
-                  Leave Room
+                  방 나가기
                 </motion.button>
               </div>
             </motion.div>
