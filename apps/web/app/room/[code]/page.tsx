@@ -115,6 +115,24 @@ export default function RoomPage() {
   const currentPlayer = players.find(p => p.id === user?.id)
   const currentIsReady = currentPlayer?.isReady ?? isReady
 
+  // Check if current user is host
+  const isHost = user?.id === room?.hostId
+
+  // Check if game can start (minimum players ready, excluding host)
+  const readyPlayers = players.filter(p => p.isReady || p.isHost)
+  const canStartGame = isHost && players.length >= (room?.minPlayers ?? 5) &&
+    readyPlayers.length === players.length
+
+  const handleStartGame = () => {
+    if (!room || !canStartGame) return
+
+    const socket = getSocket()
+    socket.emit('start_game', {
+      room_id: room.code,
+      game_type: room.gameType,
+    })
+  }
+
   if (!_hasHydrated || !room) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -209,21 +227,47 @@ export default function RoomPage() {
                   <span className="text-gray-500">최대 인원</span>
                   <span className="font-semibold">{room.maxPlayers}명</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">준비 현황</span>
+                  <span className={`font-semibold ${
+                    readyPlayers.length === players.length ? 'text-green-600' : 'text-yellow-600'
+                  }`}>
+                    {readyPlayers.length}/{players.length}명 준비
+                  </span>
+                </div>
               </div>
 
               <div className="mt-6 space-y-3">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleToggleReady}
-                  className={`w-full px-4 py-3 font-semibold rounded-xl transition-colors ${
-                    currentIsReady
-                      ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                      : 'bg-primary-600 hover:bg-primary-700 text-white'
-                  }`}
-                >
-                  {currentIsReady ? '준비 취소' : '준비 완료'}
-                </motion.button>
+                {isHost ? (
+                  <motion.button
+                    whileHover={canStartGame ? { scale: 1.02 } : {}}
+                    whileTap={canStartGame ? { scale: 0.98 } : {}}
+                    onClick={handleStartGame}
+                    disabled={!canStartGame}
+                    className={`w-full px-4 py-3 font-semibold rounded-xl transition-colors ${
+                      canStartGame
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                        : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {canStartGame
+                      ? '게임 시작'
+                      : `대기 중 (${readyPlayers.length}/${players.length} 준비)`}
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleToggleReady}
+                    className={`w-full px-4 py-3 font-semibold rounded-xl transition-colors ${
+                      currentIsReady
+                        ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                        : 'bg-primary-600 hover:bg-primary-700 text-white'
+                    }`}
+                  >
+                    {currentIsReady ? '준비 취소' : '준비 완료'}
+                  </motion.button>
+                )}
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
